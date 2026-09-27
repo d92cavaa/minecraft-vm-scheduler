@@ -1,0 +1,74 @@
+name: Minecraft VM Scheduler
+
+on:
+  schedule:
+    # 10:00 Europe/Rome = 08:00 UTC en horario de verano
+    # 09:00 UTC en horario de invierno
+    #
+    # GitHub cron usa UTC, así que inicialmente vamos a usar
+    # 08:00 UTC para el encendido.
+    - cron: "0 8 * * *"
+
+    # 02:00 Europe/Rome = 00:00 UTC en horario de verano
+    # 01:00 UTC en horario de invierno
+    - cron: "0 0 * * *"
+
+  workflow_dispatch:
+    inputs:
+      action:
+        description: "Acción"
+        required: true
+        default: "start"
+        type: choice
+        options:
+          - start
+          - stop
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  minecraft-vm:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Login to Azure
+        uses: azure/login@v2
+        with:
+          client-id: 960c8a8f-8118-4e03-b902-750d11decd09
+          tenant-id: 7c9c71d7-00f9-476d-8d05-f51abd4ec22a
+          subscription-id: 05e51831-a1a8-48ff-91c9-7af5ba5b2de1
+
+      - name: Start Minecraft VM
+        if: github.event_name == 'workflow_dispatch' && github.event.inputs.action == 'start'
+        run: |
+          az vm start \
+            --resource-group MC-SERVER \
+            --name mc-vm
+
+      - name: Stop Minecraft VM
+        if: github.event_name == 'workflow_dispatch' && github.event.inputs.action == 'stop'
+        run: |
+          az vm deallocate \
+            --resource-group MC-SERVER \
+            --name mc-vm
+
+      - name: Scheduled action
+        if: github.event_name == 'schedule'
+        run: |
+          HOUR=$(date -u +%H)
+
+          if [ "$HOUR" = "08" ]; then
+            echo "Starting Minecraft VM..."
+            az vm start \
+              --resource-group MC-SERVER \
+              --name mc-vm
+          elif [ "$HOUR" = "00" ]; then
+            echo "Stopping Minecraft VM..."
+            az vm deallocate \
+              --resource-group MC-SERVER \
+              --name mc-vm
+          else
+            echo "No action required."
+          fi
