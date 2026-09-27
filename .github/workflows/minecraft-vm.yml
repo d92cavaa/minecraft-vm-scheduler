@@ -2,16 +2,13 @@ name: Minecraft VM Scheduler
 
 on:
   schedule:
-    # 10:00 Europe/Rome = 08:00 UTC en horario de verano
-    # 09:00 UTC en horario de invierno
-    #
-    # GitHub cron usa UTC, así que inicialmente vamos a usar
-    # 08:00 UTC para el encendido.
-    - cron: "0 8 * * *"
+    # Encender todos los días a las 10:15 hora de Italia
+    - cron: "15 10 * * *"
+      timezone: "Europe/Rome"
 
-    # 02:00 Europe/Rome = 00:00 UTC en horario de verano
-    # 01:00 UTC en horario de invierno
-    - cron: "0 0 * * *"
+    # Apagar todos los días a las 02:15 hora de Italia
+    - cron: "15 2 * * *"
+      timezone: "Europe/Rome"
 
   workflow_dispatch:
     inputs:
@@ -41,34 +38,21 @@ jobs:
           subscription-id: 05e51831-a1a8-48ff-91c9-7af5ba5b2de1
 
       - name: Start Minecraft VM
-        if: github.event_name == 'workflow_dispatch' && github.event.inputs.action == 'start'
+        if: |
+          (github.event_name == 'workflow_dispatch' && github.event.inputs.action == 'start') ||
+          (github.event_name == 'schedule' && github.event.schedule == '15 10 * * *')
         run: |
+          echo "Iniciando Minecraft VM..."
           az vm start \
             --resource-group MC-SERVER \
             --name mc-vm
 
       - name: Stop Minecraft VM
-        if: github.event_name == 'workflow_dispatch' && github.event.inputs.action == 'stop'
+        if: |
+          (github.event_name == 'workflow_dispatch' && github.event.inputs.action == 'stop') ||
+          (github.event_name == 'schedule' && github.event.schedule == '15 2 * * *')
         run: |
+          echo "Apagando Minecraft VM..."
           az vm deallocate \
             --resource-group MC-SERVER \
             --name mc-vm
-
-      - name: Scheduled action
-        if: github.event_name == 'schedule'
-        run: |
-          HOUR=$(date -u +%H)
-
-          if [ "$HOUR" = "08" ]; then
-            echo "Starting Minecraft VM..."
-            az vm start \
-              --resource-group MC-SERVER \
-              --name mc-vm
-          elif [ "$HOUR" = "00" ]; then
-            echo "Stopping Minecraft VM..."
-            az vm deallocate \
-              --resource-group MC-SERVER \
-              --name mc-vm
-          else
-            echo "No action required."
-          fi
