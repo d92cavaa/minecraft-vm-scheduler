@@ -2,13 +2,11 @@ name: Minecraft VM Scheduler
 
 on:
   schedule:
-    # Encender todos los días a las 10:15 hora de Italia
-    - cron: "15 10 * * *"
-      timezone: "Europe/Rome"
+    # Encender todos los días a las 10:17 (hora España/Italia GMT+2 -> 08:17 UTC)
+    - cron: "5 7 * * *"
 
-    # Apagar todos los días a las 02:15 hora de Italia
-    - cron: "15 2 * * *"
-      timezone: "Europe/Rome"
+    # Apagar todos los días a las 02:17 (hora España/Italia GMT+2 -> 00:17 UTC)
+    - cron: "5 23 * * *"
 
   workflow_dispatch:
     inputs:
@@ -30,7 +28,23 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+      - name: Determinar acción según hora local (España/Italia)
+        id: check_time
+        run: |
+          CURRENT_HOUR=$(TZ="Europe/Rome" date +%H)
+          echo "Hora actual en España/Italia: $CURRENT_HOUR"
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "action=\({{ github.event.inputs.action }}" >>\)GITHUB_OUTPUT
+          elif [ "\(CURRENT_HOUR" -ge 8 ] && [ "\)CURRENT_HOUR" -le 14 ]; then
+            echo "action=start" >> $GITHUB_OUTPUT
+          elif [ "\(CURRENT_HOUR" -ge 1 ] && [ "\)CURRENT_HOUR" -le 5 ]; then
+            echo "action=stop" >> $GITHUB_OUTPUT
+          else
+            echo "action=none" >> $GITHUB_OUTPUT
+          fi
+
       - name: Login to Azure
+        if: steps.check_time.outputs.action != 'none'
         uses: azure/login@v2
         with:
           client-id: 960c8a8f-8118-4e03-b902-750d11decd09
@@ -38,9 +52,7 @@ jobs:
           subscription-id: 05e51831-a1a8-48ff-91c9-7af5ba5b2de1
 
       - name: Start Minecraft VM
-        if: |
-          (github.event_name == 'workflow_dispatch' && github.event.inputs.action == 'start') ||
-          (github.event_name == 'schedule' && github.event.schedule == '15 10 * * *')
+        if: steps.check_time.outputs.action == 'start'
         run: |
           echo "Iniciando Minecraft VM..."
           az vm start \
@@ -48,9 +60,7 @@ jobs:
             --name mc-vm
 
       - name: Stop Minecraft VM
-        if: |
-          (github.event_name == 'workflow_dispatch' && github.event.inputs.action == 'stop') ||
-          (github.event_name == 'schedule' && github.event.schedule == '15 2 * * *')
+        if: steps.check_time.outputs.action == 'stop'
         run: |
           echo "Apagando Minecraft VM..."
           az vm deallocate \
