@@ -2,16 +2,16 @@ name: Minecraft VM Scheduler
 
 on:
   schedule:
-    # Encender todos los días a las 10:17 (hora España/Italia GMT+2 -> 08:17 UTC)
+    # Encender: 09:05 España/Italia (07:05 UTC)
     - cron: "5 7 * * *"
 
-    # Apagar todos los días a las 02:17 (hora España/Italia GMT+2 -> 00:17 UTC)
+    # Apagar: 01:05 España/Italia (23:05 UTC)
     - cron: "5 23 * * *"
 
   workflow_dispatch:
     inputs:
       action:
-        description: "Acción"
+        description: "Accion"
         required: true
         default: "start"
         type: choice
@@ -28,41 +28,42 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Determinar acción según hora local (España/Italia)
-        id: check_time
-        run: |
-          CURRENT_HOUR=$(TZ="Europe/Rome" date +%H)
-          echo "Hora actual en España/Italia: $CURRENT_HOUR"
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            echo "action=\({{ github.event.inputs.action }}" >>\)GITHUB_OUTPUT
-          elif [ "\(CURRENT_HOUR" -ge 8 ] && [ "\)CURRENT_HOUR" -le 14 ]; then
-            echo "action=start" >> $GITHUB_OUTPUT
-          elif [ "\(CURRENT_HOUR" -ge 1 ] && [ "\)CURRENT_HOUR" -le 5 ]; then
-            echo "action=stop" >> $GITHUB_OUTPUT
-          else
-            echo "action=none" >> $GITHUB_OUTPUT
-          fi
-
       - name: Login to Azure
-        if: steps.check_time.outputs.action != 'none'
         uses: azure/login@v2
         with:
           client-id: 960c8a8f-8118-4e03-b902-750d11decd09
           tenant-id: 7c9c71d7-00f9-476d-8d05-f51abd4ec22a
           subscription-id: 05e51831-a1a8-48ff-91c9-7af5ba5b2de1
 
-      - name: Start Minecraft VM
-        if: steps.check_time.outputs.action == 'start'
+      - name: Ejecutar accion de la VM
         run: |
-          echo "Iniciando Minecraft VM..."
-          az vm start \
-            --resource-group MC-SERVER \
-            --name mc-vm
+          # Si se pulsa manualmente desde GitHub
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            ACTION="${{ github.event.inputs.action }}"
+          else
+            # Evaluar la hora actual en hora peninsular (0-23)
+            HORA=$(TZ="Europe/Madrid" date +%-H)
+            echo "Hora local detectada: $HORA"
+            
+            # Si corre entre las 00:00 y las 04:00 -> APAGAR
+            if [ "\(HORA" -ge 0 ] && [ "\)HORA" -le 4 ]; then
+              ACTION="stop"
+            # Si corre entre las 08:00 y las 12:00 -> ENCENDER
+            elif [ "\(HORA" -ge 8 ] && [ "\)HORA" -le 12 ]; then
+              ACTION="start"
+            else
+              ACTION="none"
+            fi
+          fi
 
-      - name: Stop Minecraft VM
-        if: steps.check_time.outputs.action == 'stop'
-        run: |
-          echo "Apagando Minecraft VM..."
-          az vm deallocate \
-            --resource-group MC-SERVER \
-            --name mc-vm
+          echo "Accion a realizar: $ACTION"
+
+          if [ "$ACTION" = "start" ]; then
+            echo "Iniciando VM..."
+            az vm start --resource-group MC-SERVER --name mc-vm
+          elif [ "$ACTION" = "stop" ]; then
+            echo "Desasignando/Apagando VM..."
+            az vm deallocate --resource-group MC-SERVER --name mc-vm
+          else
+            echo "Fuera de rango programado, no se hace nada."
+          fi
